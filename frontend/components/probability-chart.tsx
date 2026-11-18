@@ -30,6 +30,30 @@ function formatTick(t: number, spanDays: number) {
     : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+const MIN_SPAN = 10; // percentage points
+
+/** Fit the y-axis to the data so small moves are visible, but never zoom past 10 points. */
+function yAxis(values: number[]): { domain: [number, number]; ticks: number[] } {
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const pad = Math.max((hi - lo) * 0.15, 1);
+  let min = Math.floor((lo - pad) / 5) * 5;
+  let max = Math.ceil((hi + pad) / 5) * 5;
+  while (max - min < MIN_SPAN) {
+    min -= 5;
+    max += 5;
+  }
+  if (min < 0) [min, max] = [0, Math.max(max - min, MIN_SPAN)];
+  if (max > 100) [min, max] = [Math.min(min - (max - 100), 100 - MIN_SPAN), 100];
+  min = Math.max(0, min);
+  max = Math.min(100, max);
+  // Evenly spaced ticks on round numbers (at most 6 labels).
+  const step = [2, 5, 10, 20, 25].find((s) => (max - min) / s <= 5) ?? 25;
+  const ticks: number[] = [];
+  for (let t = Math.ceil(min / step) * step; t <= max; t += step) ticks.push(t);
+  return { domain: [min, max], ticks };
+}
+
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
 function useReducedMotion() {
@@ -59,6 +83,7 @@ export function ProbabilityChart({ snapshots }: { snapshots: Snapshot[] }) {
   // SVG attributes don't resolve CSS variables, so colors are literal here.
   const color = rising ? UP : DOWN;
   const ticks = makeTicks(data[0].t, data[data.length - 1].t, spanDays);
+  const y = yAxis(data.map((d) => d.p));
 
   return (
     <div className="h-72 w-full">
@@ -84,8 +109,8 @@ export function ProbabilityChart({ snapshots }: { snapshots: Snapshot[] }) {
             minTickGap={24}
           />
           <YAxis
-            domain={[0, 100]}
-            ticks={[0, 25, 50, 75, 100]}
+            domain={y.domain}
+            ticks={y.ticks}
             tickFormatter={(v: number) => `${v}%`}
             tick={{ fill: MUTED, fontSize: 12 }}
             axisLine={false}

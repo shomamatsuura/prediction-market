@@ -1,4 +1,4 @@
-import { TrendingDown, TrendingUp } from "lucide-react";
+import { Minus, TrendingDown, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn, pct, pts } from "@/lib/format";
@@ -49,10 +49,14 @@ export function ProbabilityRing({ value, size = 64 }: { value: number; size?: nu
 }
 
 export function ChangeBadge({ change, className }: { change: number; className?: string }) {
-  const up = change >= 0;
-  const Icon = up ? TrendingUp : TrendingDown;
+  const flat = Math.abs(change) < 0.0005; // under 0.05 points rounds to 0.0
+  const up = change > 0;
+  const Icon = flat ? Minus : up ? TrendingUp : TrendingDown;
   return (
-    <Badge variant={up ? "up" : "down"} className={cn("tabular-nums normal-case", className)}>
+    <Badge
+      variant={flat ? "default" : up ? "up" : "down"}
+      className={cn("tabular-nums normal-case", className)}
+    >
       <Icon className="size-3" />
       {pts(change)}
     </Badge>

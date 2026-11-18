@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, unstable_rethrow } from "next/navigation";
 
+import { LocalTime } from "@/components/local-time";
 import { MarketAvatar } from "@/components/market-avatar";
 import { ProbabilityChart } from "@/components/probability-chart";
 import { ChangeBadge, ProbabilityRing } from "@/components/probability";
@@ -86,6 +87,13 @@ export default async function MarketPage({ params, searchParams }: Props) {
   }
   const change24h = daySnapshots.length ? market.probability - daySnapshots[0].probability : 0;
   const externalUrl = polymarketUrl(market.slug);
+  // When we have less history than the selected range, say how far back it goes.
+  const firstAt = snapshots.length ? new Date(snapshots[0].captured_at) : null;
+  const lastAt = snapshots.length ? new Date(snapshots[snapshots.length - 1].captured_at) : null;
+  const trackedSince =
+    firstAt && lastAt && lastAt.getTime() - firstAt.getTime() < (days - 0.5) * 86_400_000
+      ? snapshots[0].captured_at
+      : null;
 
   return (
     <div className="space-y-6">
@@ -125,7 +133,19 @@ export default async function MarketPage({ params, searchParams }: Props) {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Probability history</CardTitle>
+          <div className="space-y-1">
+            <CardTitle className="text-base">Probability history</CardTitle>
+            {trackedSince ? (
+              <p className="text-xs text-muted-foreground">
+                Tracked since{" "}
+                <LocalTime
+                  iso={trackedSince}
+                  options={{ month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }}
+                />{" "}
+                · {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"}
+              </p>
+            ) : null}
+          </div>
           <div className="flex gap-1 rounded-full border border-border p-1">
             {RANGES.map((r) => (
               <Link
