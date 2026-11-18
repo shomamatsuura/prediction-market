@@ -70,14 +70,17 @@ User ──< Watchlist ──< WatchlistItem >── Market ──< MarketSnapsh
 |---|---|---|---|
 | `GET` | `/health` | — | Health check |
 | `GET` | `/markets` | — | List markets (supports query filters, e.g. `?category=politics`) |
+| `GET` | `/markets/movers` | — | Biggest probability changes (`?hours=24&direction=up\|down\|any`) |
+| `GET` | `/markets/categories` | — | Categories with market counts |
 | `GET` | `/markets/{id}` | — | Market detail |
 | `GET` | `/markets/{id}/snapshots` | — | Historical probability snapshots for charting |
 | `GET` | `/watchlists` | ✅ | List the current user's watchlists |
 | `POST` | `/watchlists` | ✅ | Create a watchlist |
+| `DELETE` | `/watchlists/{id}` | ✅ | Delete a watchlist |
 | `POST` | `/watchlists/{id}/items` | ✅ | Add a market to a watchlist |
 | `DELETE` | `/watchlists/{id}/items/{market_id}` | ✅ | Remove a market from a watchlist |
 
-FastAPI generates interactive docs at `/docs` while the backend is running.
+FastAPI generates interactive docs at `/docs` in development. They are turned off in production (`DOCS_ENABLED=false`).
 
 ---
 
@@ -98,21 +101,19 @@ cd prediction-market-analytics
 
 ### 2. Configure environment variables
 
-Create `backend/.env`:
+Each `.env.example` lists every setting with its default. Copy them and fill in your values. The copies are git-ignored; never commit them.
 
-```env
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/markets
-CLERK_JWKS_URL=https://<your-clerk-domain>/.well-known/jwks.json
-INGESTION_INTERVAL_MINUTES=60
+```bash
+cp .env.example .env                      # POSTGRES_PASSWORD for docker compose
+cp backend/.env.example backend/.env      # Clerk JWKS URL, issuer, ingestion settings
+cp frontend/.env.example frontend/.env.local   # Clerk keys
 ```
 
-Create `frontend/.env.local`:
+- **`.env`**: set `POSTGRES_PASSWORD` to a random value, e.g. `openssl rand -hex 24`. Compose refuses to start without it.
+- **`backend/.env`**: set `CLERK_JWKS_URL`, `CLERK_ISSUER` (your Clerk Frontend API URL) and `CLERK_AUTHORIZED_PARTIES` (`http://localhost:3000` locally).
+- **`frontend/.env.local`**: set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Leave both empty to run without sign-in: public pages work and the watchlist page says sign-in isn't configured.
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-```
+`API_URL` is only used by the Next.js server. The browser never calls the API directly, so the backend URL and session tokens stay server-side.
 
 ### 3. Run everything with Docker Compose
 
@@ -126,6 +127,8 @@ docker compose up --build
 | Backend API | http://localhost:8000 |
 | API docs | http://localhost:8000/docs |
 
+All ports are bound to `127.0.0.1`, so nothing is exposed to your network.
+
 ### 4. Run database migrations and seed data
 
 ```bash
@@ -133,7 +136,13 @@ docker compose exec backend alembic upgrade head
 docker compose exec backend python seed.py
 ```
 
-The seed adds sample data so the UI isn't empty right away. Real Polymarket data starts arriving with the first scheduled ingestion run.
+The seed adds sample markets with a week of history so the UI isn't empty right away. Real Polymarket data starts arriving with the first ingestion run, about 10 seconds after the backend starts and then every hour. Seeded markets are marked inactive once real data arrives.
+
+### 5. Run the tests
+
+```bash
+docker compose run --rm backend pytest
+```
 
 ### Running without Docker (optional)
 
@@ -141,7 +150,7 @@ The seed adds sample data so the UI isn't empty right away. Real Polymarket data
 # Backend
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 alembic upgrade head
 uvicorn main:app --reload
 
@@ -151,7 +160,7 @@ npm install
 npm run dev
 ```
 
-You still need PostgreSQL. Run just the database with `docker compose up -d postgres`.
+You still need PostgreSQL. Run just the database with `docker compose up -d postgres` and set `DATABASE_URL` in `backend/.env` (see the example file).
 
 ---
 
@@ -160,16 +169,20 @@ You still need PostgreSQL. Run just the database with `docker compose up -d post
 ```
 prediction-market-analytics/
 ├── frontend/              # Next.js app (App Router, TypeScript)
-│   ├── app/               # Routes: /, /markets, /markets/[id], /watchlist
-│   └── components/        # UI components (shadcn/ui, Recharts charts)
+│   ├── app/               # Routes: /, /markets, /markets/[id], /watchlist; Server Actions
+│   ├── components/        # UI components (shadcn/ui, Recharts charts)
+│   ├── lib/               # Server-only API client, auth helper, formatting
+│   └── proxy.ts           # Per-request CSP nonce + route protection
 ├── backend/               # FastAPI app
 │   ├── main.py            # App entrypoint + scheduler startup
 │   ├── models/            # SQLAlchemy models
 │   ├── routers/           # API routes
 │   ├── ingestion/         # Polymarket client + ingest job
 │   ├── auth/              # Clerk JWT verification dependency
-│   └── alembic/           # Database migrations
-├── .github/workflows/     # CI: lint + test on every push
+│   ├── alembic/           # Database migrations
+│   ├── tests/             # pytest suite
+│   └── seed.py            # Sample data for local development
+├── .github/workflows/     # CI: lint, test, build and dependency audit on every push
 ├── docker-compose.yml
 └── README.md
 ```
@@ -178,9 +191,39 @@ prediction-market-analytics/
 
 ## CI/CD
 
-- **GitHub Actions** lints and tests the frontend and backend on every push.
+- **GitHub Actions** lints, tests and builds the frontend and backend on every push, and audits runtime dependencies for known vulnerabilities. Dependabot opens weekly update PRs.
 - **Vercel** deploys the frontend automatically from `main`.
 - **Railway** hosts the FastAPI backend as a persistent service, next to a managed PostgreSQL instance.
+
+### Production configuration
+
+The backend's production image (`docker build --target prod backend`) runs migrations on start, serves on `$PORT` and runs as an unprivileged user. Set these on Railway:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Railway's PostgreSQL URL (`postgres://` URLs are accepted) |
+| `CLERK_JWKS_URL` | `https://<your-clerk-domain>/.well-known/jwks.json` |
+| `CLERK_ISSUER` | `https://<your-clerk-domain>` |
+| `CLERK_AUTHORIZED_PARTIES` | Your frontend origin, e.g. `https://your-app.vercel.app` |
+| `FORWARDED_ALLOW_IPS` | `*` (Railway's proxy sets `X-Forwarded-For`; needed for per-client rate limiting) |
+
+With `APP_ENV=production` (the image default) the backend refuses to start if any Clerk setting is missing or the database isn't PostgreSQL. Run a single instance: the scheduler lives in the API process, and an advisory lock keeps overlapping runs from double-counting.
+
+On Vercel, set `API_URL` (the Railway backend URL), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`.
+
+---
+
+## Security
+
+- **Authentication**: the backend verifies Clerk session JWTs itself: RS256 only, signature against Clerk's JWKS, expiry, issuer and authorized party (`azp`). Tokens signed with other algorithms or keys are rejected.
+- **Authorization**: every watchlist query is scoped to the signed-in user. Another user's watchlist returns 404, so its existence isn't revealed.
+- **No tokens in the browser's API calls**: the frontend calls the API from the Next.js server (pages and Server Actions). Server Actions validate their inputs and are protected by Next.js's same-origin check.
+- **Input validation**: every query parameter and request body is bounded and validated; search wildcards are escaped. Unknown fields are rejected.
+- **Untrusted upstream data**: Polymarket responses are size-capped and validated entry by entry; only `https` image URLs are kept, and images load through Next.js's optimizer from an allow-listed host.
+- **Headers**: a strict, nonce-based Content-Security-Policy with `strict-dynamic`, plus HSTS, `X-Frame-Options: DENY`, `nosniff` and a restrictive referrer policy. The API sends `default-src 'none'` and `Cache-Control: no-store` on per-user data.
+- **Abuse limits**: per-IP rate limiting on the API (`RATE_LIMIT`), and caps of 20 watchlists per user and 200 markets per watchlist.
+- **Secrets**: only in uncommitted env files or the hosting provider's settings. Variables prefixed `NEXT_PUBLIC_` reach the browser, so no secret uses that prefix.
+- **Containers**: production images run as UID 10001; local ports bind to `127.0.0.1` only.
 
 ---
 
