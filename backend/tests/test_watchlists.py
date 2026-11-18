@@ -94,3 +94,14 @@ def test_add_unknown_market(client):
     wl = client.post("/watchlists", json={"name": "A"}, headers=h).json()
     r = client.post(f"/watchlists/{wl['id']}/items", json={"market_id": 12345}, headers=h)
     assert r.status_code == 404
+
+
+def test_out_of_range_watchlist_ids_are_rejected_not_500(client):
+    headers = auth_header()
+    big = 2**31
+    assert client.delete(f"/watchlists/{big}", headers=headers).status_code == 422
+    r = client.post(f"/watchlists/{big}/items", json={"market_id": 1}, headers=headers)
+    assert r.status_code == 422
+    r = client.post("/watchlists/1/items", json={"market_id": big}, headers=headers)
+    assert r.status_code == 422
+    assert client.delete(f"/watchlists/1/items/{big}", headers=headers).status_code == 422

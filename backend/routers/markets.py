@@ -7,7 +7,15 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Market, MarketSnapshot
-from schemas import CategoryOut, MarketDetailOut, MarketOut, MarketPage, MoverOut, SnapshotOut
+from schemas import (
+    CategoryOut,
+    MarketDetailOut,
+    MarketOut,
+    MarketPage,
+    MoverOut,
+    PathId,
+    SnapshotOut,
+)
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
@@ -121,13 +129,13 @@ def _get_market(db: Session, market_id: int) -> Market:
 
 
 @router.get("/{market_id}", response_model=MarketDetailOut)
-def get_market(market_id: int, db: Session = Depends(get_db)) -> Market:
+def get_market(market_id: PathId, db: Session = Depends(get_db)) -> Market:
     return _get_market(db, market_id)
 
 
 @router.get("/{market_id}/snapshots", response_model=list[SnapshotOut])
 def get_snapshots(
-    market_id: int,
+    market_id: PathId,
     db: Session = Depends(get_db),
     days: int = Query(30, ge=1, le=365),
 ) -> list[MarketSnapshot]:

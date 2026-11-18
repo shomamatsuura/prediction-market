@@ -1,6 +1,12 @@
 from datetime import datetime
+from typing import Annotated
 
+from fastapi import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# IDs are PostgreSQL INTEGER columns. Larger values would make the query fail with a 500.
+MAX_DB_ID = 2**31 - 1
+PathId = Annotated[int, Path(ge=1, le=MAX_DB_ID)]
 
 
 class MarketOut(BaseModel):
@@ -66,7 +72,7 @@ class WatchlistCreate(BaseModel):
 class WatchlistItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    market_id: int = Field(gt=0)
+    market_id: int = Field(ge=1, le=MAX_DB_ID)
 
 
 class WatchlistItemOut(BaseModel):

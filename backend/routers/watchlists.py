@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from auth import get_current_user
 from database import get_db
 from models import Market, User, Watchlist, WatchlistItem
-from schemas import WatchlistCreate, WatchlistItemCreate, WatchlistOut
+from schemas import PathId, WatchlistCreate, WatchlistItemCreate, WatchlistOut
 
 router = APIRouter(prefix="/watchlists", tags=["watchlists"])
 
@@ -63,7 +63,7 @@ def create_watchlist(
 
 @router.delete("/{watchlist_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_watchlist(
-    watchlist_id: int,
+    watchlist_id: PathId,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -77,7 +77,7 @@ def delete_watchlist(
     "/{watchlist_id}/items", response_model=WatchlistOut, status_code=status.HTTP_201_CREATED
 )
 def add_item(
-    watchlist_id: int,
+    watchlist_id: PathId,
     body: WatchlistItemCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -100,8 +100,8 @@ def add_item(
 
 @router.delete("/{watchlist_id}/items/{market_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_item(
-    watchlist_id: int,
-    market_id: int,
+    watchlist_id: PathId,
+    market_id: PathId,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:

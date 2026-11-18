@@ -78,3 +78,8 @@ def test_categories(client, make_market):
     make_market(category="sports")
     r = client.get("/markets/categories")
     assert r.json() == [{"category": "crypto", "count": 2}, {"category": "sports", "count": 1}]
+
+
+def test_out_of_range_ids_are_rejected_not_500(client):
+    for path in ("/markets/99999999999", "/markets/99999999999/snapshots", "/markets/0"):
+        assert client.get(path).status_code == 422
