@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Loader2, Plus, Star } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { addToWatchlist, createWatchlistWithMarket, removeFromWatchlist } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,24 @@ export function WatchlistControl({ marketId, watchlists }: { marketId: number; w
   const [newName, setNewName] = useState("");
   const [pending, startTransition] = useTransition();
   const saved = watchlists.some((w) => w.contains);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click or Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   function act(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -27,13 +45,13 @@ export function WatchlistControl({ marketId, watchlists }: { marketId: number; w
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <Button variant={saved ? "secondary" : "default"} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <Star className={cn(saved && "fill-yellow-300 text-yellow-300")} />
         {saved ? "Saved" : "Add to watchlist"}
       </Button>
       {open ? (
-        <div className="absolute right-0 z-30 mt-2 w-72 rounded-xl border border-border bg-popover p-2 shadow-2xl">
+        <div className="absolute left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover p-2 shadow-2xl">
           {watchlists.length ? (
             <ul className="mb-2 max-h-60 overflow-auto">
               {watchlists.map((w) => (

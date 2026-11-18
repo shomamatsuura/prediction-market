@@ -93,7 +93,8 @@ export default async function MarketPage({ params, searchParams }: Props) {
         <ArrowLeft className="size-4" /> All markets
       </Link>
 
-      <section className="animate-rise flex flex-col gap-6 md:flex-row md:items-start">
+      {/* relative z-20: keeps the watchlist dropdown above the chart card below. */}
+      <section className="animate-rise relative z-20 flex flex-col gap-6 md:flex-row md:items-start">
         <MarketAvatar imageUrl={market.image_url} question={market.question} category={market.category} size={72} className="rounded-2xl" />
         <div className="flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
