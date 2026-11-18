@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     # Comma-separated browser origins allowed by CORS. The Next.js frontend calls the API
     # from its server, so this can usually stay empty.
     cors_origins: str = ""
-    rate_limit: str = "120/minute"
+    # Per client IP. Requests from the Next.js server share its IP, so keep this generous.
+    rate_limit: str = "600/minute"
     docs_enabled: bool = True
 
     @field_validator("database_url")
