@@ -82,15 +82,32 @@ def _parse_date(value) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+# Polymarket tag slugs mapped to the categories this app shows, in priority order.
+_TAG_CATEGORIES = [
+    ({"politics", "elections", "us-politics", "global-elections", "trump"}, "politics"),
+    ({"geopolitics", "world", "middle-east", "ukraine", "china"}, "world"),
+    ({"crypto", "bitcoin", "ethereum", "solana", "crypto-prices"}, "crypto"),
+    ({"economy", "economics", "fed", "fed-rates", "finance", "stocks", "inflation"}, "economy"),
+    ({"business", "big-tech", "earnings", "ipos"}, "business"),
+    ({"tech", "ai", "technology", "openai"}, "tech"),
+    ({"science", "space", "climate", "weather", "health"}, "science"),
+    ({"sports", "nba", "nfl", "soccer", "mlb", "nhl", "tennis", "f1", "ufc", "esports"}, "sports"),
+    ({"pop-culture", "culture", "movies", "music", "awards", "celebrities"}, "culture"),
+]
+
+
 def _category(raw: dict) -> str:
+    tags = raw.get("tags")
+    slugs = set()
+    if isinstance(tags, list):
+        for tag in tags[:50]:
+            if isinstance(tag, dict) and isinstance(tag.get("slug"), str):
+                slugs.add(tag["slug"].strip().lower())
+    for tag_slugs, category in _TAG_CATEGORIES:
+        if slugs & tag_slugs:
+            return category
     category = _clean_text(raw.get("category"), 64)
-    if not category:
-        events = raw.get("events")
-        if isinstance(events, list) and events and isinstance(events[0], dict):
-            category = _clean_text(events[0].get("category"), 64)
-    if not category:
-        return "other"
-    return category.lower()
+    return category.lower() if category else "other"
 
 
 def parse_market(raw) -> ParsedMarket | None:
@@ -157,6 +174,7 @@ class PolymarketClient:
                 "offset": offset,
                 "order": "volume24hr",
                 "ascending": "false",
+                "include_tag": "true",
             },
         )
         response.raise_for_status()

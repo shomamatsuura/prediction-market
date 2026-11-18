@@ -37,6 +37,13 @@ def test_parse_market_happy_path():
     assert m.end_date.year == 2030
 
 
+def test_parse_market_category_from_tags():
+    tags = [{"slug": "nvda"}, {"slug": "pop-culture"}, {"slug": "big-tech"}]
+    assert parse_market(raw(tags=tags, category=None)).category == "business"
+    assert parse_market(raw(tags=[{"slug": "nba"}])).category == "sports"
+    assert parse_market(raw(tags="junk", category=None)).category == "other"
+
+
 def test_parse_market_rejects_bad_data():
     assert parse_market("nope") is None
     assert parse_market(raw(question=None)) is None
