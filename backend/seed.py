@@ -55,7 +55,7 @@ def seed() -> None:
             market = Market(
                 external_id=external_id,
                 question=question,
-                slug=f"sample-market-{i + 1}",
+                slug=None,  # no real Polymarket page to link to
                 description="Sample market created by seed.py for local development.",
                 category=category,
                 end_date=now + timedelta(days=rng.randint(7, 120)),
