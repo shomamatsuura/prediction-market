@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     # Per client IP. Requests from the Next.js server share its IP, so keep this generous.
     rate_limit: str = "600/minute"
+    # Reverse proxies in front of the API that append to X-Forwarded-For (1 on Railway).
+    # Only the entry they added is trusted; anything further left can be forged by the client.
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
+    # SECRET shared with the Next.js server. Requests that carry it are rate limited by the
+    # browser's IP (sent in X-Client-IP) instead of the frontend server's.
+    internal_api_secret: str = ""
     docs_enabled: bool = True
 
     @field_validator("database_url")
@@ -63,6 +69,19 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env == "production"
 
+    def warn_for_production(self) -> list[str]:
+        """Settings that work but weaken rate limiting in production."""
+        if not self.is_production:
+            return []
+        warnings = []
+        if not self.trusted_proxy_hops:
+            warnings.append("TRUSTED_PROXY_HOPS is 0: clients behind the proxy share one limit")
+        if not self.internal_api_secret:
+            warnings.append(
+                "INTERNAL_API_SECRET is not set: all frontend traffic shares one rate limit"
+            )
+        return warnings
+
     def validate_for_production(self) -> None:
         """Fail fast on insecure production configuration."""
         if not self.is_production:
@@ -76,6 +95,8 @@ class Settings(BaseSettings):
             problems.append("CLERK_AUTHORIZED_PARTIES must list your frontend origin(s)")
         if self.database_url.startswith("sqlite"):
             problems.append("DATABASE_URL must point to PostgreSQL")
+        if self.internal_api_secret and len(self.internal_api_secret) < 32:
+            problems.append("INTERNAL_API_SECRET must be at least 32 characters")
         if problems:
             raise RuntimeError("Insecure production configuration: " + "; ".join(problems))
 

@@ -1,5 +1,7 @@
 """HTTP hardening: security headers and rate limiting."""
 
+import hmac
+import ipaddress
 import logging
 import math
 import time
@@ -49,8 +51,43 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _valid_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
 def client_ip(request: Request, settings: Settings) -> str:
-    """The address requests are rate limited by: the TCP connection's."""
+    """The address requests are rate limited by.
+
+    1. Requests from the Next.js server that carry the shared INTERNAL_API_SECRET are keyed by
+       the browser's IP, which the frontend passes in X-Client-IP. Without this, every visitor
+       would share the frontend server's IP and one client could exhaust the limit for all.
+    2. Behind TRUSTED_PROXY_HOPS reverse proxies (1 on Railway), the client IP is the entry
+       those proxies appended to X-Forwarded-For, counted from the right. Entries further left
+       come from the client and can be forged, so they're never used.
+    3. Otherwise, the address of the TCP connection.
+    """
+    secret = settings.internal_api_secret
+    if secret:
+        given = request.headers.get("x-internal-secret", "")
+        if hmac.compare_digest(given.encode(), secret.encode()):
+            ip = _valid_ip(request.headers.get("x-client-ip"))
+            if ip:
+                return ip
+
+    hops = settings.trusted_proxy_hops
+    if hops:
+        forwarded = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",")]
+        forwarded = [h for h in forwarded if h]
+        if len(forwarded) >= hops:
+            ip = _valid_ip(forwarded[-hops])
+            if ip:
+                return ip
+
     return request.client.host if request.client else "unknown"
 
 

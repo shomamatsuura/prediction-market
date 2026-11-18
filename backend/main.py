@@ -15,6 +15,8 @@ logger = logging.getLogger("app")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.validate_for_production()
+    for warning in settings.warn_for_production():
+        logger.warning(warning)
     scheduler = None
     if settings.scheduler_enabled and settings.app_env != "test":
         from ingestion.scheduler import start_scheduler

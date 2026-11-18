@@ -26,6 +26,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://markets:${POSTGRES_PASSWORD}@postgres:5432/markets
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
     volumes:
       - ./backend:/app
       - /app/.venv
@@ -44,6 +45,7 @@ services:
         required: false
     environment:
       API_URL: http://backend:8000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
       WATCHPACK_POLLING: "true"
     volumes:
       - ./frontend:/app

@@ -1,6 +1,9 @@
 import "server-only";
 
-import { API_URL } from "./config";
+import { headers as requestHeaders } from "next/headers";
+import { unstable_rethrow } from "next/navigation";
+
+import { API_URL, INTERNAL_API_SECRET } from "./config";
 import type {
   Category,
   MarketDetail,
@@ -25,6 +28,24 @@ export class ApiError extends Error {
   }
 }
 
+const IP_PATTERN = /^[0-9a-fA-F:.]{2,45}$/;
+
+/**
+ * The visitor's IP, for the backend's per-client rate limit. Vercel sets x-real-ip and
+ * overwrites x-forwarded-for, so clients can't forge them there. Self-hosted, put a proxy
+ * that does the same in front of Next.js. The backend validates the value again.
+ */
+async function visitorIp(): Promise<string | null> {
+  try {
+    const h = await requestHeaders();
+    const ip = (h.get("x-real-ip") ?? h.get("x-forwarded-for")?.split(",")[0] ?? "").trim();
+    return IP_PATTERN.test(ip) ? ip : null;
+  } catch (error) {
+    unstable_rethrow(error);
+    return null; // called outside a request
+  }
+}
+
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 async function request<T>(
@@ -38,6 +59,13 @@ async function request<T>(
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (INTERNAL_API_SECRET) {
+    const ip = await visitorIp();
+    if (ip) {
+      headers["X-Internal-Secret"] = INTERNAL_API_SECRET;
+      headers["X-Client-IP"] = ip;
+    }
+  }
 
   const res = await fetch(url, {
     method,

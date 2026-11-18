@@ -112,7 +112,7 @@ cp backend/.env.example backend/.env      # Clerk JWKS URL, issuer, ingestion se
 cp frontend/.env.example frontend/.env.local   # Clerk keys
 ```
 
-- **`.env`**: set `POSTGRES_PASSWORD` to a random value, e.g. `openssl rand -hex 24`. Compose refuses to start without it.
+- **`.env`**: set `POSTGRES_PASSWORD` to a random value, e.g. `openssl rand -hex 24`. Compose refuses to start without it. Optionally set `INTERNAL_API_SECRET` (`openssl rand -hex 32`); Compose passes it to both the frontend and the backend.
 - **`backend/.env`**: set `CLERK_JWKS_URL`, `CLERK_ISSUER` (your Clerk Frontend API URL) and `CLERK_AUTHORIZED_PARTIES` (`http://localhost:3000` locally).
 - **`frontend/.env.local`**: set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Leave both empty to run without sign-in: public pages work and the watchlist page says sign-in isn't configured.
 
@@ -209,11 +209,12 @@ The backend's production image (`docker build --target prod backend`) runs migra
 | `CLERK_JWKS_URL` | `https://<your-clerk-domain>/.well-known/jwks.json` |
 | `CLERK_ISSUER` | `https://<your-clerk-domain>` |
 | `CLERK_AUTHORIZED_PARTIES` | Your frontend origin, e.g. `https://your-app.vercel.app` |
-| `FORWARDED_ALLOW_IPS` | `*` (Railway's proxy sets `X-Forwarded-For`; needed for per-client rate limiting) |
+| `TRUSTED_PROXY_HOPS` | `1` (Railway's proxy appends the client IP to `X-Forwarded-For`; only that entry is trusted) |
+| `INTERNAL_API_SECRET` | A random value, 32+ characters (`openssl rand -hex 32`); the same value as on Vercel |
 
 With `APP_ENV=production` (the image default) the backend refuses to start if any Clerk setting is missing or the database isn't PostgreSQL. Run a single instance: the scheduler lives in the API process, and an advisory lock keeps overlapping runs from double-counting.
 
-On Vercel, set `API_URL` (the Railway backend URL), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`.
+On Vercel, set `API_URL` (the Railway backend URL, `https://`), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` and `INTERNAL_API_SECRET` (the same value as on Railway). With the shared secret, the Next.js server passes each visitor's IP to the backend, so every visitor gets their own rate limit instead of sharing the frontend server's. Without it the backend logs a warning at startup.
 
 ---
 
@@ -225,7 +226,7 @@ On Vercel, set `API_URL` (the Railway backend URL), `NEXT_PUBLIC_CLERK_PUBLISHAB
 - **Input validation**: every query parameter and request body is bounded and validated; search wildcards are escaped. Unknown fields are rejected.
 - **Untrusted upstream data**: Polymarket responses are size-capped and validated entry by entry; only `https` image URLs are kept, and images load through Next.js's optimizer from an allow-listed host.
 - **Headers**: a strict, nonce-based Content-Security-Policy with `strict-dynamic`, plus HSTS, `X-Frame-Options: DENY`, `nosniff` and a restrictive referrer policy. The API sends `default-src 'none'` and `Cache-Control: no-store` on per-user data.
-- **Abuse limits**: per-IP rate limiting on the API (`RATE_LIMIT`), and caps of 20 watchlists per user and 200 markets per watchlist.
+- **Abuse limits**: per-client rate limiting on every API route (`RATE_LIMIT`, default 600 requests per minute). Forged `X-Forwarded-For` entries are ignored, and requests from the Next.js server count against the visitor's IP when they carry `INTERNAL_API_SECRET`. Users are also capped at 20 watchlists and 200 markets per watchlist.
 - **Secrets**: only in uncommitted env files or the hosting provider's settings. Variables prefixed `NEXT_PUBLIC_` reach the browser, so no secret uses that prefix.
 - **Containers**: production images run as UID 10001; local ports bind to `127.0.0.1` only.
 
