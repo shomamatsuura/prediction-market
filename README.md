@@ -2,17 +2,19 @@
 
 A full-stack analytics platform for prediction markets. It ingests live market data from Polymarket every hour and stores the history in a time series. Users can browse markets, chart how probabilities move over time, spot the biggest movers and keep personal watchlists.
 
+<!-- TODO: add once deployed / recorded:
 **Live demo:** [your-app.vercel.app](https://your-app.vercel.app) · **Demo video:** [2-minute walkthrough](https://link-to-video)
-
 ![Dashboard screenshot](docs/screenshots/dashboard.png)
+-->
 
 ---
 
 ## Features
 
 - **Automated data ingestion.** A background scheduler pulls active markets from Polymarket's public API every hour. Each run upserts the markets and records a probability snapshot, and it runs unattended in production.
-- **Historical probability charts.** Interactive line charts show how each market's probability has changed over time.
-- **Biggest movers dashboard.** An aggregate view shows the markets with the largest probability swings.
+- **Historical probability charts.** Interactive line charts show how each market's probability has changed over 24H, 7D, 30D or 90D. The y-axis fits the data (at least a 10-point range), so small moves stay visible, and when the history is shorter than the selected range the page says how far back it goes, in the viewer's time zone.
+- **Biggest movers dashboard.** The home page shows the biggest risers and fallers over the last 24 hours, plus trending markets by volume.
+- **Market browser.** Search markets by question or category, filter by category, sort by volume, liquidity, probability, end date or last update, and page through the results.
 - **Authentication.** Sign-up and sign-in use Clerk. The backend verifies Clerk JWTs against Clerk's JWKS.
 - **Personal watchlists.** Signed-in users can save markets and manage their own watchlists.
 - **Public browsing.** Anyone can view the market list and market detail pages without an account. Only watchlists require auth.
@@ -23,9 +25,9 @@ A full-stack analytics platform for prediction markets. It ingests live market d
 
 | Layer | Technologies |
 |---|---|
-| **Frontend** | Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui, Recharts |
-| **Backend** | FastAPI, Python, Pydantic, SQLAlchemy, Alembic |
-| **Database** | PostgreSQL |
+| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Recharts |
+| **Backend** | FastAPI, Python 3.12, Pydantic, SQLAlchemy, Alembic |
+| **Database** | PostgreSQL 16 |
 | **Scheduling** | APScheduler |
 | **Auth** | Clerk |
 | **Infra** | Docker, Docker Compose, GitHub Actions |
@@ -55,6 +57,7 @@ flowchart LR
 - **The backend is a long-running process, not serverless.** APScheduler runs inside the FastAPI process, so the backend is deployed on Railway as a persistent service. That keeps the hourly ingestion job alive.
 - **Markets and snapshots are separate tables.** A `Market` row holds the market's current metadata. `MarketSnapshot` rows record the probability at each hourly run (one-to-many). The snapshot table powers the charts and the movers dashboard.
 - **Ingestion is fault tolerant.** Each run is logged and wrapped in error handling, so a bad API response doesn't crash the scheduler.
+- **Restarts don't add extra snapshots.** On startup the scheduler looks at the last real ingestion run (seeded data doesn't count). If it was less than one interval ago, the first run waits until that interval is up; otherwise it runs about 10 seconds after startup. Deploys and dev-server reloads therefore don't pile up snapshots minutes apart and skew the movers.
 
 ### Data model
 
@@ -69,11 +72,11 @@ User ──< Watchlist ──< WatchlistItem >── Market ──< MarketSnapsh
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | `GET` | `/health` | — | Health check |
-| `GET` | `/markets` | — | List markets (supports query filters, e.g. `?category=politics`) |
-| `GET` | `/markets/movers` | — | Biggest probability changes (`?hours=24&direction=up\|down\|any`) |
+| `GET` | `/markets` | — | Paginated market list (`?q=&category=&active=true&sort=volume\|liquidity\|probability\|ending\|updated&limit=24&offset=0`) |
+| `GET` | `/markets/movers` | — | Biggest probability changes (`?hours=24&limit=10&direction=up\|down\|any`) |
 | `GET` | `/markets/categories` | — | Categories with market counts |
 | `GET` | `/markets/{id}` | — | Market detail |
-| `GET` | `/markets/{id}/snapshots` | — | Historical probability snapshots for charting |
+| `GET` | `/markets/{id}/snapshots` | — | Probability snapshots for charting (`?days=30`, up to 365) |
 | `GET` | `/watchlists` | ✅ | List the current user's watchlists |
 | `POST` | `/watchlists` | ✅ | Create a watchlist |
 | `DELETE` | `/watchlists/{id}` | ✅ | Delete a watchlist |
@@ -90,13 +93,13 @@ FastAPI generates interactive docs at `/docs` in development. They are turned of
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - A free [Clerk](https://clerk.com) application (for auth keys)
-- Optional, for running without Docker: Node.js 20+ and Python 3.11+
+- Optional, for running without Docker: Node.js 22 and Python 3.12
 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/<your-username>/prediction-market-analytics.git
-cd prediction-market-analytics
+git clone https://github.com/<your-username>/prediction-market.git
+cd prediction-market
 ```
 
 ### 2. Configure environment variables
@@ -136,7 +139,7 @@ docker compose exec backend alembic upgrade head
 docker compose exec backend python seed.py
 ```
 
-The seed adds sample markets with a week of history so the UI isn't empty right away. Real Polymarket data starts arriving with the first ingestion run, about 10 seconds after the backend starts and then every hour. Seeded markets are marked inactive once real data arrives.
+The seed adds sample markets with a week of history so the UI isn't empty right away. Real Polymarket data starts arriving with the first ingestion run, about 10 seconds after the backend starts on a fresh database and then every hour (`INGESTION_INTERVAL_MINUTES`). If a real run happened less than an interval ago, restarting the backend waits for the next scheduled run instead. Seeded markets are marked inactive once real data arrives.
 
 ### 5. Run the tests
 
@@ -167,17 +170,18 @@ You still need PostgreSQL. Run just the database with `docker compose up -d post
 ## Project Structure
 
 ```
-prediction-market-analytics/
+prediction-market/
 ├── frontend/              # Next.js app (App Router, TypeScript)
 │   ├── app/               # Routes: /, /markets, /markets/[id], /watchlist; Server Actions
 │   ├── components/        # UI components (shadcn/ui, Recharts charts)
+│   ├── public/            # Static files (robots.txt, apple-touch-icon)
 │   ├── lib/               # Server-only API client, auth helper, formatting
 │   └── proxy.ts           # Per-request CSP nonce + route protection
 ├── backend/               # FastAPI app
 │   ├── main.py            # App entrypoint + scheduler startup
 │   ├── models/            # SQLAlchemy models
 │   ├── routers/           # API routes
-│   ├── ingestion/         # Polymarket client + ingest job
+│   ├── ingestion/         # Polymarket client, ingest job, scheduler
 │   ├── auth/              # Clerk JWT verification dependency
 │   ├── alembic/           # Database migrations
 │   ├── tests/             # pytest suite
@@ -227,11 +231,13 @@ On Vercel, set `API_URL` (the Railway backend URL), `NEXT_PUBLIC_CLERK_PUBLISHAB
 
 ---
 
+<!-- TODO: add screenshots under docs/screenshots/ and restore this section.
 ## Screenshots
 
 | Markets | Market detail + chart | Watchlist |
 |---|---|---|
 | ![Markets](docs/screenshots/markets.png) | ![Detail](docs/screenshots/market-detail.png) | ![Watchlist](docs/screenshots/watchlist.png) |
+-->
 
 ---
 
