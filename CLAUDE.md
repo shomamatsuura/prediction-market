@@ -45,4 +45,13 @@ Before running any command that deletes things, explain what it will delete and 
 
 ## Frontend conventions
 
+- This is Next.js 16: middleware is `proxy.ts`, and APIs differ from older versions. Read the bundled docs in `frontend/node_modules/next/dist/docs/` before using an unfamiliar API.
 - Prefer Server Components for data reads; avoid client-side `useEffect` fetching unless the page needs interactivity.
+- The browser never calls the backend. Pages and Server Actions call it through the server-only client in `frontend/lib/api.ts`, so Clerk tokens stay on the server. Validate every Server Action input.
+- Keep `cacheComponents` and `partialPrefetching` off: they can't be combined with the nonce-based CSP in `proxy.ts`. Every page renders per request.
+- In a `try/catch` around data fetching, call `unstable_rethrow(error)` first so Next.js's own errors (`notFound`, `redirect`, dynamic rendering) pass through.
+
+## Checks
+
+- Backend lint: `cd backend && ruff check . && ruff format --check .`
+- Frontend: `cd frontend && npm run lint && npx tsc --noEmit && npm run build`
