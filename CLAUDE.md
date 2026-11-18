@@ -9,7 +9,7 @@ Prediction market analytics platform: Next.js frontend (`frontend/`), FastAPI ba
 - Make small commits, each covering one change, with a clear message saying what changed (and why, when it isn't obvious).
 - Before every commit, run the tests and make sure they pass:
   ```sh
-  docker compose run --rm web pytest
+  docker compose run --rm backend pytest
   ```
   If any test fails, don't commit: fix the problem or report the failure.
 - Ask before running `git push`, every time. Approval for one push doesn't cover the next.
