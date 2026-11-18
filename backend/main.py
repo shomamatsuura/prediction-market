@@ -3,12 +3,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 from config import get_settings
-from security import SecurityHeadersMiddleware, limiter
+from security import RateLimiter, RateLimitMiddleware, SecurityHeadersMiddleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
@@ -40,9 +37,9 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if docs else None,
     )
 
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
+    app.state.rate_limiter = RateLimiter(settings.rate_limit)
+    app.add_middleware(RateLimitMiddleware, limiter=app.state.rate_limiter, settings=settings)
+    # Added last so it runs first: 429 responses get the security headers too.
     app.add_middleware(SecurityHeadersMiddleware)
     if settings.cors_origin_list:
         app.add_middleware(
